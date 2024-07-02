@@ -239,7 +239,7 @@ home_layout = html.Div(
         html.Div(
             style={'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center', 'position': 'relative', 'marginBottom': '50px'},
             children=[
-                html.H1("Welcome", style={'fontFamily': 'Lato', 'fontWeight': 'bold', 'fontSize': '60px'}),
+                html.H1("Welcome!", style={'fontFamily': 'Lato', 'fontWeight': 'bold', 'fontSize': '80px'}),
                 html.Img(src='/assets/Btr.png', style={'width': '2in', 'position': 'absolute', 'right': '10px', 'top': '0.05cm'})
             ]
         ),
@@ -762,7 +762,7 @@ market_movers_layout = html.Div(
                         'textAlign': 'justify'  # Justify content
                     },
                     children=[
-                        html.H3("June 2024, Week 3: June 25–26, 2024", style={'color': 'black', 'textAlign': 'center','fontWeight': 'bold'}),
+                        html.H3("June 2024, Week 4: June 25–26, 2024", style={'color': 'black', 'textAlign': 'center','fontWeight': 'bold'}),
                         html.P("The demand for this week’s bill offerings remained strong on June 26, with the bids coming in almost sideways from the previous auction. The 91D, 183D, and 364D bills fetched average rates of 5.666%, 5.930%, and 6.031%, with the auction being oversubscribed by an average of 2.7x the total offer size across all tenors."),
                         html.P("Meanwhile, there was a slightly strong demand for the 20Y bond offered on June 26. The bids came in between 6.800% to 6.900%, which was 7 to 8 basis points higher than the range bidded for the bond offered on June 19 with the same tenor. The auction was also oversubscribed by 1.70x the offer size, which is also stronger than the demand for the 20Y bond offered the week before, which was oversubscribed by 1.54x."),
                         html.P("The market is looking forward to the policy rate decision of the BSP Monetary Board on June 27, with expectations of a hold in its benchmark interest rates amid risks to inflation outlook and weak peso. Market players were also on the lookout for possible macroeconomic catalysts such as the US GDP, US PCE, balance of payments, and jobless claims data releases this week. Additionally, there are geopolitical tensions in the Middle East and heightened Ukrainian drone attacks on Russian refineries, which may inflate price action and stimulate the demand for the USD.")
@@ -1452,7 +1452,8 @@ def update_mature_bonds_chart(start_date, end_date):
     start_date = pd.to_datetime(start_date)
     end_date = pd.to_datetime(end_date)
 
-    # Filter by date range
+    # Filter by date range and remove rows with NaN values
+    filtered_data = filtered_data.dropna(subset=['Maturity Date', 'Auction Date', 'Series'])
     filtered_data = filtered_data[
         (pd.to_datetime(filtered_data['Maturity Date']) >= start_date) &
         (pd.to_datetime(filtered_data['Maturity Date']) <= end_date)
@@ -1464,38 +1465,50 @@ def update_mature_bonds_chart(start_date, end_date):
     # Convert dates to datetime
     filtered_data['Maturity Date'] = pd.to_datetime(filtered_data['Maturity Date'])
     filtered_data['Auction Date'] = pd.to_datetime(filtered_data['Auction Date'])
+    
+   
 
-    # Sort data by Maturity Date
-    filtered_data = filtered_data.sort_values(by='Maturity Date')
+    # Sort data by Maturity Date and Auction Date
+    filtered_data = filtered_data.sort_values(by=['Maturity Date', 'Auction Date'])
 
     # Check if there's any data to plot
     if filtered_data.empty:
         return go.Figure()
 
-    # Create hover texts for bar chart
-    hover_texts = [
-        f'Series: {row["Series"]} - Auction Date: {row["Auction Date"].strftime("%Y-%m-%d")} - Maturity Date: {row["Maturity Date"].strftime("%Y-%m-%d")}'
-        for _, row in filtered_data.iterrows()
-    ]
+    # Group by Series and Maturity Date
+    grouped_data = filtered_data.groupby(['Series', 'Maturity Date']).agg({
+        'Auction Date': list,
+        'Maturity Date': 'first',
+        'Series': 'first'
+    }).reset_index(drop=True)
 
-    # Calculate durations for the bars
-    duration_years = (filtered_data['Maturity Date'] - filtered_data['Auction Date']).dt.days / 365
-
-    # Create horizontal bar chart
+    # Create the stacked bar chart
     fig = go.Figure()
 
-    # Add bars for the duration from issuance to maturity
-    fig.add_trace(go.Bar(
-        y=filtered_data['Series'],
-        x=duration_years,
-        base=filtered_data['Auction Date'].dt.year,
-        orientation='h',
-        name='Duration to Maturity',
-        hovertext=hover_texts,
-        hoverinfo='text+x'
-    ))
+    for _, row in grouped_data.iterrows():
+        # Sort auction dates within the group in descending order
+        auction_dates_sorted = sorted(row['Auction Date'], reverse=True)
+        
+        # Calculate durations for the bars
+        durations_sorted = [(pd.to_datetime(row['Maturity Date']) - auction_date).days / 365 for auction_date in auction_dates_sorted]
+        
+        hover_texts = [
+            f'Series: {row["Series"]} - Auction Date: {auction_date.strftime("%Y-%m-%d")} - Maturity Date: {row["Maturity Date"].strftime("%Y-%m-%d")}'
+            for auction_date in auction_dates_sorted
+        ]
+
+        fig.add_trace(go.Bar(
+            y=[row['Series']] * len(durations_sorted),
+            x=durations_sorted,
+            base=[auction_date.year for auction_date in auction_dates_sorted],
+            orientation='h',
+            name=row['Series'],
+            hovertext=hover_texts,
+            hoverinfo='text+x'
+        ))
 
     fig.update_layout(
+        barmode='stack',
         title=dict(
             text=f'<b>Bond Maturity Distribution</b> ({start_date.year} to {end_date.year})',
             x=0.5,
@@ -1539,8 +1552,6 @@ def update_mature_bonds_chart(start_date, end_date):
     )
 
     return fig
-
-
 
 # Callback to update the Holders of GS graph
 @app.callback(
