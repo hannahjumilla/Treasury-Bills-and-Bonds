@@ -74,14 +74,14 @@ app.index_string = '''
 
 
 # Load T-Bills data from CSV
-tbills_file_path = "/Users/hannahjumilla/Desktop/Dashboard 2/Tbills3.csv"
+tbills_file_path = r"C:\Users\ntulauan\Desktop\Treasury-Bills-and-Bonds-dashboard\Tbills3.csv"
 df_tbills = pd.read_csv(tbills_file_path)
 
 # Convert 'Date' column to datetime format
 df_tbills['Date'] = pd.to_datetime(df_tbills['Date'])
 
 # Load Holders of GS data from CSV
-holders_file_path = "/Users/hannahjumilla/Desktop/Dashboard 2/HoldersData.csv"
+holders_file_path = r"C:\Users\ntulauan\Desktop\Treasury-Bills-and-Bonds-dashboard\HoldersData.csv"
 df_holders = pd.read_csv(holders_file_path)
 
 # Filter out the 'Total' row
@@ -92,7 +92,7 @@ df_holders = df_holders.melt(id_vars=['Dates'], var_name='Date', value_name='Amo
 df_holders['Date'] = pd.to_datetime(df_holders['Date'])
 
 # Load Bonds from the CSV file
-tbonds_file_path = '/Users/hannahjumilla/Desktop/Dashboard 2/TreasuryBonds2.csv'
+tbonds_file_path = r"C:\Users\ntulauan\Desktop\Treasury-Bills-and-Bonds-dashboard\TreasuryBonds2.csv"
 date_parser = lambda x: pd.to_datetime(x, errors='coerce')
 
 # Read the CSV file with specific columns parsed as dates and handle bad lines
@@ -1437,7 +1437,31 @@ def update_horizontal_stacked_bar_graph(selected_tenor, selected_year, selected_
 
     return fig
 
-# Load Bonds from the CSV file
+
+# Convert 'Series' column to string explicitly
+df_tbonds['Series'] = df_tbonds['Series'].astype(str)
+
+# Replace NaN values with an empty string
+df_tbonds['Series'].replace('nan', '', inplace=True)
+
+# Filter out empty strings in 'Series' column
+df_tbonds = df_tbonds[df_tbonds['Series'] != '']
+
+# Define a color mapping based on the first two digits of the series
+color_mapping = {
+    series[:2]: 'red' if series[:2] in {'03', '3-','3.'} else
+                 'orange' if series[:2] in {'05', '5-','5.'} else
+                 'blue' if series[:2] in {'07', '7-','7.'} else
+                 'green' if series[:2] == '10' else
+                 'pink' if series[:2] == '20' else
+                 'purple' if series[:2] == '25' else
+                 'gray'  # Default color
+    for series in df_tbonds['Series']
+}
+
+
+
+# Callback to update the bar graph
 @app.callback(
     Output('mature-bonds-bar-graph', 'figure'),
     [
@@ -1447,7 +1471,7 @@ def update_horizontal_stacked_bar_graph(selected_tenor, selected_year, selected_
 )
 def update_mature_bonds_chart(start_date, end_date):
     filtered_data = df_tbonds.copy()
-    
+
     # Convert start_date and end_date to datetime
     start_date = pd.to_datetime(start_date)
     end_date = pd.to_datetime(end_date)
@@ -1455,18 +1479,12 @@ def update_mature_bonds_chart(start_date, end_date):
     # Filter by date range and remove rows with NaN values
     filtered_data = filtered_data.dropna(subset=['Maturity Date', 'Auction Date', 'Series'])
     filtered_data = filtered_data[
-        (pd.to_datetime(filtered_data['Maturity Date']) >= start_date) &
-        (pd.to_datetime(filtered_data['Maturity Date']) <= end_date)
+        (pd.to_datetime(filtered_data['Auction Date']) >= start_date) &
+        (pd.to_datetime(filtered_data['Auction Date']) <= end_date)
     ]
 
     # Ensure 'Series' is treated as string
     filtered_data['Series'] = filtered_data['Series'].astype(str)
-    
-    # Convert dates to datetime
-    filtered_data['Maturity Date'] = pd.to_datetime(filtered_data['Maturity Date'])
-    filtered_data['Auction Date'] = pd.to_datetime(filtered_data['Auction Date'])
-    
-   
 
     # Sort data by Maturity Date and Auction Date
     filtered_data = filtered_data.sort_values(by=['Maturity Date', 'Auction Date'])
@@ -1488,23 +1506,30 @@ def update_mature_bonds_chart(start_date, end_date):
     for _, row in grouped_data.iterrows():
         # Sort auction dates within the group in descending order
         auction_dates_sorted = sorted(row['Auction Date'], reverse=True)
-        
+
         # Calculate durations for the bars
-        durations_sorted = [(pd.to_datetime(row['Maturity Date']) - auction_date).days / 365 for auction_date in auction_dates_sorted]
-        
+        durations_sorted = [(pd.to_datetime(row['Maturity Date']) - pd.to_datetime(auction_date)).days / 365
+                            for auction_date in auction_dates_sorted]
+
         hover_texts = [
-            f'Series: {row["Series"]} - Auction Date: {auction_date.strftime("%Y-%m-%d")} - Maturity Date: {row["Maturity Date"].strftime("%Y-%m-%d")}'
+            f'Series: {row["Series"]} - Auction Date: {auction_date} - Maturity Date: {row["Maturity Date"]}'
             for auction_date in auction_dates_sorted
         ]
+
+        # Get the first two digits of the series
+        series_prefix = row['Series'][:2]
+
+        color = color_mapping.get(series_prefix, 'gray')
 
         fig.add_trace(go.Bar(
             y=[row['Series']] * len(durations_sorted),
             x=durations_sorted,
-            base=[auction_date.year for auction_date in auction_dates_sorted],
+            base=[pd.to_datetime(auction_date).year for auction_date in auction_dates_sorted],
             orientation='h',
             name=row['Series'],
             hovertext=hover_texts,
-            hoverinfo='text+x'
+            hoverinfo='text+x',
+            marker_color=color
         ))
 
     fig.update_layout(
@@ -1520,7 +1545,7 @@ def update_mature_bonds_chart(start_date, end_date):
             )
         ),
         xaxis_title=dict(
-            text='Year',
+            text='Years',
             font=dict(
                 size=18,
                 color='black',
@@ -1542,16 +1567,17 @@ def update_mature_bonds_chart(start_date, end_date):
             range=[start_date.year, end_date.year]
         ),
         yaxis=dict(
-            type='category',  # Explicitly set y-axis type to 'category'
+            type='category',
             tickfont=dict(family='Lato, Arial, sans-serif')
         ),
         hoverlabel=dict(
-            font_size=12,  # Adjust the font size as needed
+            font_size=12,
             font_family='Lato, Arial, sans-serif'
         )
     )
 
     return fig
+
 
 # Callback to update the Holders of GS graph
 @app.callback(
