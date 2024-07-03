@@ -1476,11 +1476,11 @@ def update_mature_bonds_chart(start_date, end_date):
     start_date = pd.to_datetime(start_date)
     end_date = pd.to_datetime(end_date)
 
-    # Filter by date range and remove rows with NaN values
+    # Filter by maturity date range and remove rows with NaN values
     filtered_data = filtered_data.dropna(subset=['Maturity Date', 'Auction Date', 'Series'])
     filtered_data = filtered_data[
-        (pd.to_datetime(filtered_data['Auction Date']) >= start_date) &
-        (pd.to_datetime(filtered_data['Auction Date']) <= end_date)
+        (pd.to_datetime(filtered_data['Maturity Date']) >= start_date) &
+        (pd.to_datetime(filtered_data['Maturity Date']) <= end_date)
     ]
 
     # Ensure 'Series' is treated as string
@@ -1508,7 +1508,7 @@ def update_mature_bonds_chart(start_date, end_date):
         auction_dates_sorted = sorted(row['Auction Date'], reverse=True)
 
         # Calculate durations for the bars
-        durations_sorted = [(pd.to_datetime(row['Maturity Date']) - pd.to_datetime(auction_date)).days / 365
+        durations_sorted = [(pd.to_datetime(row['Maturity Date']) - pd.to_datetime(auction_date)).days / 365.25
                             for auction_date in auction_dates_sorted]
 
         hover_texts = [
@@ -1562,8 +1562,9 @@ def update_mature_bonds_chart(start_date, end_date):
         ),
         xaxis=dict(
             type='linear',
+            tickformat='%Y-%m',  # Show year and month on the x-axis
             tick0=start_date.year,
-            dtick=1,
+            dtick='M1',  # Show ticks for every month
             range=[start_date.year, end_date.year]
         ),
         yaxis=dict(
@@ -1577,6 +1578,8 @@ def update_mature_bonds_chart(start_date, end_date):
     )
 
     return fig
+
+
 
 
 # Callback to update the Holders of GS graph
